@@ -1,15 +1,16 @@
 (ns matthiasn.systems-toolbox.component-test
   "Interact with components by sending some messages directly, see them handled correctly."
   #?(:cljs (:require-macros [cljs.core.async.macros :refer [go]]))
-  (:require  [matthiasn.systems-toolbox.test-spec]
-    #?(:clj  [clojure.test :refer [deftest testing is]]
+  (:require [matthiasn.systems-toolbox.test-spec]
+    #?(:clj [clojure.test :refer [deftest testing is]]
        :cljs [cljs.test :refer-macros [deftest testing is]])
-    #?(:clj  [clojure.core.async :refer [<! chan put! go timeout promise-chan]]
+    #?(:clj [clojure.core.async :refer [<! <!! chan put! go timeout promise-chan]]
        :cljs [cljs.core.async :refer [<! chan put! timeout promise-chan]])
-             [matthiasn.systems-toolbox.test-promise :as tp]
-             [matthiasn.systems-toolbox.component :as component]
-    #?(:clj  [clojure.tools.logging :as log]
+            [matthiasn.systems-toolbox.test-promise :as tp :refer [eventually]]
+            [matthiasn.systems-toolbox.component :as component]
+    #?(:clj [clojure.tools.logging :as log]
        :cljs [matthiasn.systems-toolbox.log :as log])))
+
 
 (deftest cmp-all-msgs-handler
   "Tests that a very simple component that only has a handler for all messages regardless of type receives all
@@ -32,11 +33,10 @@
 
     (component/send-msgs cmp (map (fn [m] [:some/type m]) msgs-to-send))
 
-    (tp/w-timeout 5000 (go
-                         (testing "all messages received"
-                           (is (true? (<! all-recvd))))
-                         (testing "sent messages equal received messages"
-                           (is (= msgs-to-send @msgs-recvd)))))))
+    (testing "all messages received"
+      (eventually (true? (<!! all-recvd))))
+    (testing "sent messages equal received messages"
+      (eventually (= msgs-to-send @msgs-recvd)))))
 
 (defn cmp-all-msgs-handler-cmp-state-fn
   "Like cmp-all-msgs-handler test, except that the handler function here acts on the component state provided
@@ -70,15 +70,10 @@
 
     (component/send-msgs cmp msgs-to-send)
 
-    (tp/w-timeout 5000 (go
-                         (testing "all messages received"
-                           (is (true? (<! all-recvd))))
-                         (testing "processes more than 1K messages per second"
-                           (let [msgs-per-sec (int (* (/ 1000 (- (component/now) start-ts)) cnt))]
-                             (log/debug "Msgs/s:" msgs-per-sec)
-                             (is (> msgs-per-sec 1000))))
-                         (testing "sent messages equal received messages"
-                           (is (= res @state)))))))
+    (testing "all messages received"
+      (eventually (true? (<!! all-recvd))))
+    (testing "sent messages equal received messages"
+      (eventually (= res @state)))))
 
 (deftest cmp-all-msgs-handler-cmp-state1 (cmp-all-msgs-handler-cmp-state-fn))
 
@@ -117,15 +112,14 @@
                                       [msg-type m]))
                                   msgs-to-send))
 
-    (tp/w-timeout 5000 (go
-                         (testing "all messages received"
-                           (is (true? (<! all-recvd))))
-                         (testing "sent messages equal received messages"
-                           (is (= msgs-to-send (:all @msgs-recvd))))
-                         (testing "specific handlers only received their respective messages"
-                           (is (every? div-by-10? (:div-by-10 @msgs-recvd)))
-                           (is (every? div-by-100? (:div-by-100 @msgs-recvd))))
-                         (testing "unhandled handler did not receive any messages for which specific handler exists"
-                           (let [unhandled-items (:unhandled @msgs-recvd)]
-                             (is (every? #(not (div-by-10? %)) unhandled-items))
-                             (is (every? #(not (div-by-100? %)) unhandled-items))))))))
+    (testing "all messages received"
+      (eventually (true? (<!! all-recvd))))
+    (testing "sent messages equal received messages"
+      (eventually (= msgs-to-send (:all @msgs-recvd))))
+    (testing "specific handlers only received their respective messages"
+      (eventually (every? div-by-10? (:div-by-10 @msgs-recvd)))
+      (eventually (every? div-by-100? (:div-by-100 @msgs-recvd))))
+    (testing "unhandled handler did not receive any messages for which specific handler exists"
+      (let [unhandled-items (:unhandled @msgs-recvd)]
+        (eventually (every? #(not (div-by-10? %)) unhandled-items))
+        (eventually (every? #(not (div-by-100? %)) unhandled-items))))))
